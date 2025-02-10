@@ -1,11 +1,15 @@
 # Build stage
-FROM node:20-alpine as builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+# Copier seulement package.json d'abord
+COPY package.json ./
 
+# Installer les dépendances
+RUN yarn install
+
+# Copier le reste des sources
 COPY . .
 RUN yarn build
 
@@ -14,10 +18,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY package.json yarn.lock ./
-RUN yarn install --production --frozen-lockfile && \
+# Copier seulement package.json
+COPY package.json ./
+
+# Installer uniquement les dépendances de production
+RUN yarn install --production && \
     yarn cache clean
 
+# Copier les fichiers compilés depuis le builder
 COPY --from=builder /app/dist ./dist
 
 # Add Docker socket volume
