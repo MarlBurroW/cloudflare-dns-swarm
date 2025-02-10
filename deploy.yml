@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  dns-manager:
+    image: marlburrow/cloudflare-dns-swarm:${IMAGE_TAG:-latest}
+    environment:
+      - CLOUDFLARE_TOKEN=${CLOUDFLARE_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RETRY_ATTEMPTS=${RETRY_ATTEMPTS:-3}
+      - RETRY_DELAY=${RETRY_DELAY:-300000}
+      - IP_CHECK_INTERVAL=${IP_CHECK_INTERVAL:-3600000}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "com.docker.stack.namespace=dns-manager"
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
