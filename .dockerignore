@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+yarn.lock
+package-lock.json
+
+# Source control
+.git
+.gitignore
+.github
+
+# Environment files
+.env
+.env.*
+*.env
+
+# Development files
+.vscode
+.idea
+*.log
+*.md
+tests
+coverage
+jest.config.js
+.eslintrc*
+.prettier*
+.editorconfig
+
+# Build artifacts
+dist
+build
+*.tsbuildinfo
+
+# Docker files
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Temporary files
+.DS_Store
+*.swp
+*.swo
+tmp
+temp
+
+# Debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log* 

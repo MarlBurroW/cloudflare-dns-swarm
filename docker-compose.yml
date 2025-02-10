@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  dns-manager:
+    image: node:20
+    working_dir: /app
+    command: yarn dev
+    environment:
+      - CLOUDFLARE_TOKEN=${CLOUDFLARE_TOKEN}
+      - LOG_LEVEL=debug
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/app
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager

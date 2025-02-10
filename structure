@@ -1,0 +1,28 @@
+.
+├── src/
+│   ├── config/
+│   │   └── config.ts
+│   ├── services/
+│   │   ├── cloudflare.service.ts
+│   │   ├── docker.service.ts
+│   │   ├── dns.service.ts
+│   │   └── ip.service.ts
+│   ├── models/
+│   │   ├── task.model.ts
+│   │   └── dns-record.model.ts
+│   ├── utils/
+│   │   ├── logger.ts
+│   │   └── validators.ts
+│   ├── workers/
+│   │   └── task.worker.ts
+│   └── app.ts
+├── .github/
+│   └── workflows/
+│       └── docker-build.yml
+├── .dockerignore
+├── .gitignore
+├── Dockerfile
+├── docker-compose.yml
+├── package.json
+├── tsconfig.json
+└── README.md 
