@@ -1,6 +1,37 @@
 version: "3.8"
 
 services:
+  # Test services with different types of DNS records
+  web-a-record:
+    image: nginx:alpine
+    container_name: web-a-record
+    labels:
+      # Simple A record with automatic IP
+      "dns.cloudflare.hostname": "test-b.${DOMAIN:-example.com}"
+      "dns.cloudflare.type": "A"
+      "dns.cloudflare.proxied": "true"
+
+  web-cname:
+    image: nginx:alpine
+    container_name: web-cname
+    labels:
+      # CNAME record pointing to another domain
+      "dns.cloudflare.hostname": "www.${DOMAIN:-example.com}"
+      "dns.cloudflare.type": "CNAME"
+      "dns.cloudflare.content": "${DOMAIN:-example.com}"
+
+  web-multi-records:
+    image: nginx:alpine
+    container_name: web-multi-records
+    labels:
+      # Multiple records for the same service
+      "dns.cloudflare.hostname": "api.${DOMAIN:-example.com}"
+      "dns.cloudflare.type": "A"
+      # Second record with suffix
+      "dns.cloudflare.hostname.v6": "api.${DOMAIN:-example.com}"
+      "dns.cloudflare.type.v6": "AAAA"
+      "dns.cloudflare.content.v6": "2001:db8::1"
+
   dns-manager:
     image: node:20
     working_dir: /app
@@ -9,7 +40,7 @@ services:
       - CLOUDFLARE_TOKEN=${CLOUDFLARE_TOKEN}
       - LOG_LEVEL=debug
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - .:/app
     deploy:
       mode: replicated

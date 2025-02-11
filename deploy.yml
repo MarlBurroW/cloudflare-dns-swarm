@@ -34,6 +34,10 @@ services:
           memory: 256M
         reservations:
           memory: 128M
+      cap_add:
+        - DAC_OVERRIDE
+      security_opt:
+        - no-new-privileges:true
     logging:
       driver: "json-file"
       options:

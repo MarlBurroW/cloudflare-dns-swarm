@@ -16,6 +16,8 @@ class Application {
       // Configure Docker event handlers
       this.dockerService.on("dns-update", async (data) => {
         try {
+          this.logger.debug("DNS update event received", { data });
+
           switch (data.event) {
             case "create":
             case "update":
@@ -24,14 +26,8 @@ class Application {
                 data.labels
               );
               break;
-            case "remove":
-              if (data.labels.hostname) {
-                await this.dnsService.handleServiceRemoval(
-                  data.service,
-                  data.labels.hostname,
-                  data.labels.type
-                );
-              }
+            default:
+              this.logger.debug("Unknown event received", { data });
               break;
           }
         } catch (error) {

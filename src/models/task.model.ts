@@ -25,6 +25,7 @@ export interface DNSTask {
     content: string;
     ttl?: number;
     recordId?: string;
+    proxied?: boolean;
   };
   error?: string;
 }

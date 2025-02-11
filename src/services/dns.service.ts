@@ -4,6 +4,7 @@ import { IPService } from "./ip.service";
 import { TaskWorker } from "../workers/task.worker";
 import { TaskType, TaskStatus, DNSTask } from "../models/task.model";
 import { v4 as uuidv4 } from "uuid";
+import { LabelValidator, DNSLabel } from "../utils/validators";
 
 interface DNSUpdateOptions {
   serviceName: string;
@@ -11,6 +12,7 @@ interface DNSUpdateOptions {
   name: string;
   content?: string;
   ttl?: number;
+  proxied?: boolean;
 }
 
 export class DNSService {
@@ -34,16 +36,31 @@ export class DNSService {
     labels: { [key: string]: string }
   ): Promise<void> {
     try {
-      const dnsOptions = this.parseDNSLabels(serviceName, labels);
+      this.logger.debug("Handling service update", { serviceName, labels });
+      const validLabels = LabelValidator.validateServiceLabels(
+        serviceName,
+        labels
+      );
 
-      if (!dnsOptions.content) {
-        dnsOptions.content = await this.ipService.getPublicIP();
-      }
-      if (!dnsOptions.recordType) {
-        dnsOptions.recordType = "A";
-      }
+      for (const label of validLabels) {
+        const dnsOptions = {
+          serviceName,
+          name: label.hostname,
+          recordType: label.type,
+          content: label.content,
+          ttl: label.ttl,
+          proxied: label.proxied,
+        };
 
-      await this.createOrUpdateDNSRecord(dnsOptions);
+        this.logger.debug("Processing DNS options", { dnsOptions });
+
+        if (!dnsOptions.content) {
+          this.logger.debug("No content provided, fetching public IP");
+          dnsOptions.content = await this.ipService.getPublicIP();
+        }
+
+        await this.createOrUpdateDNSRecord(dnsOptions);
+      }
     } catch (error) {
       this.logger.error("Failed to handle service update", {
         error,
@@ -57,18 +74,57 @@ export class DNSService {
   private async createOrUpdateDNSRecord(
     options: DNSUpdateOptions
   ): Promise<void> {
+    this.logger.debug("Creating/updating DNS record", { options });
+
     const record: DNSRecord = {
       type: options.recordType || "A",
       name: options.name,
       content: options.content!,
       ttl: options.ttl || 1,
-      proxied: true,
+      proxied: typeof options.proxied === "boolean" ? options.proxied : true,
     };
 
     const existingRecord = await this.cloudflare.getDNSRecord(
       options.name,
       record.type
     );
+
+    if (existingRecord) {
+      const needsUpdate =
+        existingRecord.content !== record.content ||
+        existingRecord.ttl !== record.ttl ||
+        existingRecord.proxied !== record.proxied;
+
+      if (!needsUpdate) {
+        this.logger.debug("DNS record already up to date", {
+          name: record.name,
+          type: record.type,
+          content: record.content,
+          proxied: record.proxied,
+        });
+        return;
+      }
+
+      this.logger.info("Updating DNS record", {
+        name: record.name,
+        type: record.type,
+        content: record.content,
+        previous: existingRecord.content,
+        proxied: record.proxied,
+        reason: {
+          contentChanged: existingRecord.content !== record.content,
+          ttlChanged: existingRecord.ttl !== record.ttl,
+          proxiedChanged: existingRecord.proxied !== record.proxied,
+        },
+      });
+    } else {
+      this.logger.info("Creating DNS record", {
+        name: record.name,
+        type: record.type,
+        content: record.content,
+        proxied: record.proxied,
+      });
+    }
 
     const task: DNSTask = {
       id: uuidv4(),
@@ -82,6 +138,7 @@ export class DNSService {
         name: record.name,
         content: record.content,
         ttl: record.ttl,
+        proxied: record.proxied,
       },
     };
 
@@ -89,63 +146,7 @@ export class DNSService {
       task.data = { ...task.data, recordId: existingRecord.id };
     }
 
+    this.logger.debug("Adding task to queue", { taskId: task.id, task });
     await this.taskWorker.addTask(task);
-  }
-
-  private parseDNSLabels(
-    serviceName: string,
-    labels: { [key: string]: string }
-  ): DNSUpdateOptions {
-    const name = labels["dns.cloudflare.hostname"];
-    if (!name) {
-      throw new Error(
-        `Service ${serviceName} is missing required dns.cloudflare.hostname label`
-      );
-    }
-
-    return {
-      serviceName,
-      name,
-      recordType: labels["dns.cloudflare.type"],
-      content: labels["dns.cloudflare.content"],
-      ttl: labels["dns.cloudflare.ttl"]
-        ? parseInt(labels["dns.cloudflare.ttl"], 10)
-        : undefined,
-    };
-  }
-
-  public async handleServiceRemoval(
-    serviceName: string,
-    hostname: string,
-    recordType: string = "A"
-  ): Promise<void> {
-    try {
-      const record = await this.cloudflare.getDNSRecord(hostname, recordType);
-      if (record) {
-        const task: DNSTask = {
-          id: uuidv4(),
-          type: TaskType.DELETE,
-          status: TaskStatus.PENDING,
-          attempts: 0,
-          maxAttempts: 3,
-          data: {
-            serviceName,
-            recordType,
-            name: hostname,
-            content: record.content,
-            recordId: record.id,
-          },
-        };
-
-        await this.taskWorker.addTask(task);
-      }
-    } catch (error) {
-      this.logger.error("Failed to handle service removal", {
-        error,
-        serviceName,
-        hostname,
-      });
-      throw error;
-    }
   }
 }

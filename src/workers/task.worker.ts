@@ -72,8 +72,8 @@ export class TaskWorker {
             type: task.data.recordType,
             name: task.data.name,
             content: task.data.content,
-            ttl: task.data.ttl,
-            proxied: true,
+            ttl: task.data.ttl || 1,
+            proxied: task.data.proxied ?? true,
           });
           break;
         case TaskType.UPDATE:
@@ -81,8 +81,8 @@ export class TaskWorker {
             type: task.data.recordType,
             name: task.data.name,
             content: task.data.content,
-            ttl: task.data.ttl,
-            proxied: true,
+            ttl: task.data.ttl || 1,
+            proxied: task.data.proxied ?? true,
           });
           break;
         case TaskType.DELETE:

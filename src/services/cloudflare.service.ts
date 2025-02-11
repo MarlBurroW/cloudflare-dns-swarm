@@ -3,12 +3,30 @@ import { Logger } from "../utils/logger";
 import axios from "axios";
 
 export interface DNSRecord {
+  id?: string;
+  type: string;
+  name: string;
+  content: string;
+  ttl: number;
+  proxied: boolean;
+}
+
+export interface CloudflareResponse {
+  success: boolean;
+  result: DNSRecord[];
+}
+
+export interface CloudflareError {
+  code: number;
+  message: string;
+}
+
+export interface CloudflareUpdateData {
   type: string;
   name: string;
   content: string;
   ttl?: number;
   proxied?: boolean;
-  recordId?: string;
 }
 
 export class CloudflareService {
