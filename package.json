@@ -8,28 +8,31 @@
     "start": "node dist/app.js",
     "dev": "ts-node-dev src/app.ts",
     "lint": "eslint . --ext .ts",
-    "test": "jest"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage --coverageReporters=text-lcov > coverage/lcov.info"
   },
   "dependencies": {
     "axios": "^1.6.7",
     "cloudflare": "^2.9.1",
     "dockerode": "^4.0.0",
-    "winston": "^3.11.0",
-    "node-cron": "^3.0.3",
     "dotenv": "^16.4.1",
-    "uuid": "^9.0.1"
+    "node-cron": "^3.0.3",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/node": "^20.11.19",
     "@types/dockerode": "^3.3.23",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.19",
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.56.0",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.3.3",
     "jest": "^29.7.0",
-    "@types/jest": "^29.5.12",
-    "ts-jest": "^29.1.2"
+    "ts-jest": "^29.1.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
   }
 }

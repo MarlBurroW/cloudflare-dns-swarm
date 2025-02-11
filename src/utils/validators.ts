@@ -32,12 +32,19 @@ export class LabelValidator {
       serviceName,
       labels,
     });
-    const validLabels: DNSLabel[] = [];
-    const traefikLabels = this.extractTraefikLabels(labels);
-    const dnsLabels = this.validateDNSLabels(serviceName, labels);
-
-    // Merge Traefik and DNS labels
-    return [...dnsLabels, ...traefikLabels];
+    // Si on a des labels DNS explicites, on les utilise
+    if (
+      Object.keys(labels).some((key) =>
+        key.startsWith(LabelValidator.DNS_LABEL_PREFIX)
+      )
+    ) {
+      return this.validateDNSLabels(serviceName, labels);
+    }
+    // Sinon, on essaie d'extraire les labels Traefik
+    if (config.app.useTraefikLabels) {
+      return this.extractTraefikLabels(labels);
+    }
+    return [];
   }
 
   private extractTraefikLabels(labels: { [key: string]: string }): DNSLabel[] {
@@ -56,26 +63,18 @@ export class LabelValidator {
       }
     });
 
-    // Create DNS labels for Traefik hosts that don't have explicit DNS configuration
+    // Create DNS labels for Traefik hosts
     traefikHosts.forEach((hostname) => {
-      // Check if this hostname already has DNS configuration
-      const hasDNSConfig = Object.entries(labels).some(
-        ([key, value]) =>
-          key.startsWith(LabelValidator.DNS_LABEL_PREFIX) &&
-          key.includes("hostname") &&
-          value === hostname
+      traefikLabels.push({
+        hostname,
+        type: config.app.traefik.defaultRecordType,
+        content: config.app.traefik.defaultContent,
+        proxied: config.app.traefik.defaultProxied,
+        ttl: config.app.traefik.defaultTTL,
+      });
+      this.logger.debug(
+        `Created default DNS configuration for Traefik hostname: ${hostname}`
       );
-
-      if (!hasDNSConfig) {
-        traefikLabels.push({
-          hostname,
-          type: "A",
-          proxied: true,
-        });
-        this.logger.debug(
-          `Created default DNS configuration for Traefik hostname: ${hostname}`
-        );
-      }
     });
 
     return traefikLabels;

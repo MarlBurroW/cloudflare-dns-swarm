@@ -2,6 +2,7 @@ import { Logger } from "../utils/logger";
 import { CloudflareService } from "../services/cloudflare.service";
 import { DNSTask, TaskStatus, TaskType } from "../models/task.model";
 import { config } from "../config/config";
+import process from "process";
 
 export class TaskWorker {
   private static instance: TaskWorker;
@@ -9,9 +10,12 @@ export class TaskWorker {
   private cloudflare = CloudflareService.getInstance();
   private tasks: Map<string, DNSTask> = new Map();
   private isProcessing: boolean = false;
+  private processInterval?: NodeJS.Timeout;
 
   private constructor() {
-    this.startProcessing();
+    if (process.env.NODE_ENV !== "test") {
+      this.startProcessing();
+    }
   }
 
   public static getInstance(): TaskWorker {
@@ -26,11 +30,12 @@ export class TaskWorker {
     this.logger.info("Task added to queue", { taskId: task.id, task });
   }
 
-  private async startProcessing(): Promise<void> {
-    setInterval(() => this.processTasks(), 5000); // Process every 5 seconds
+  private startProcessing(): NodeJS.Timeout {
+    this.processInterval = setInterval(() => this.processTasks(), 5000);
+    return this.processInterval;
   }
 
-  private async processTasks(): Promise<void> {
+  public async processTasks(): Promise<void> {
     if (this.isProcessing) return;
 
     this.isProcessing = true;
@@ -108,11 +113,20 @@ export class TaskWorker {
 
   private async retryTask(task: DNSTask): Promise<void> {
     const delay = config.app.retryDelay * Math.pow(2, task.attempts - 1);
-    await new Promise((resolve) => setTimeout(resolve, delay));
     task.status = TaskStatus.PENDING;
+    if (process.env.NODE_ENV !== "test") {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
     this.logger.info("Retrying task", {
       taskId: task.id,
       attempt: task.attempts + 1,
     });
+  }
+
+  public stopProcessing(): void {
+    if (this.processInterval) {
+      clearInterval(this.processInterval);
+      this.processInterval = undefined;
+    }
   }
 }
