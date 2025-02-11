@@ -53,8 +53,13 @@ export class DockerService extends EventEmitter {
       try {
         const services = await this.docker.listServices({
           filters: {
-            label: ["dns.cloudflare.hostname"],
+            label: ["dns.cloudflare.hostname=*"],
           },
+        });
+
+        this.logger.debug("Found services in Swarm mode", {
+          count: services.length,
+          services: services.map((s) => s.Spec?.Name),
         });
 
         for (const service of services) {
@@ -123,6 +128,7 @@ export class DockerService extends EventEmitter {
         type: event.Type,
         action: event.Action,
         id: event.actor.ID,
+        actor: event.actor,
       });
 
       let labels, serviceName;
@@ -132,7 +138,11 @@ export class DockerService extends EventEmitter {
         const service = await this.docker.getService(event.actor.ID).inspect();
         labels = service.Spec?.Labels || {};
         serviceName = service.Spec?.Name;
-        this.logger.debug("Service event details", { serviceName, labels });
+        this.logger.debug("Service event details", {
+          serviceName,
+          labels,
+          spec: service.Spec,
+        });
       }
       // Gérer les événements de conteneurs
       else if (event.Type === "container") {
@@ -159,8 +169,13 @@ export class DockerService extends EventEmitter {
           });
         }
       }
-    } catch (error) {
-      this.logger.error("Error handling event", { error });
+    } catch (error: any) {
+      this.logger.error("Error handling event", {
+        error,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        event,
+      });
     }
   }
 
