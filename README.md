@@ -42,6 +42,46 @@ docker service create \
   marlburrow/cloudflare-dns-swarm
 ```
 
+Or using a stack file (for Portainer or `docker stack deploy`):
+
+```yaml
+version: "3.8"
+
+services:
+  dns-manager:
+    image: marlburrow/cloudflare-dns-swarm:latest
+    environment:
+      - CLOUDFLARE_TOKEN=your_cloudflare_api_token
+      - LOG_LEVEL=info
+      - RETRY_ATTEMPTS=3
+      - RETRY_DELAY=300000
+      - IP_CHECK_INTERVAL=3600000
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+```
+
+Save this as `cloudflare-dns-stack.yml` and deploy:
+
+```bash
+docker stack deploy -c cloudflare-dns-stack.yml cloudflare-dns
+```
+
 ### Development Setup
 
 If you want to contribute or modify the code:
