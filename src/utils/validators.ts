@@ -1,4 +1,5 @@
 import { Logger } from "./logger";
+import { config } from "../config/config";
 
 const logger = Logger.getInstance();
 
@@ -19,8 +20,68 @@ export class LabelValidator {
     "MX",
   ];
   private static readonly DNS_LABEL_PREFIX = "dns.cloudflare.";
+  private static readonly TRAEFIK_HOST_REGEX = /Host\(`([^`]+)`\)/;
 
-  public static validateServiceLabels(
+  private logger = Logger.getInstance();
+
+  public validateServiceLabels(
+    serviceName: string,
+    labels: { [key: string]: string }
+  ): DNSLabel[] {
+    this.logger.debug("Starting label validation", {
+      serviceName,
+      labels,
+    });
+    const validLabels: DNSLabel[] = [];
+    const traefikLabels = this.extractTraefikLabels(labels);
+    const dnsLabels = this.validateDNSLabels(serviceName, labels);
+
+    // Merge Traefik and DNS labels
+    return [...dnsLabels, ...traefikLabels];
+  }
+
+  private extractTraefikLabels(labels: { [key: string]: string }): DNSLabel[] {
+    const traefikLabels: DNSLabel[] = [];
+    const traefikHosts = new Set<string>();
+
+    // Extract all hostnames from Traefik rules
+    Object.entries(labels).forEach(([key, value]) => {
+      if (key.startsWith("traefik.http.routers.") && key.endsWith(".rule")) {
+        const match = value.match(LabelValidator.TRAEFIK_HOST_REGEX);
+        if (match) {
+          const hostname = match[1];
+          traefikHosts.add(hostname);
+          this.logger.debug(`Found Traefik hostname: ${hostname}`);
+        }
+      }
+    });
+
+    // Create DNS labels for Traefik hosts that don't have explicit DNS configuration
+    traefikHosts.forEach((hostname) => {
+      // Check if this hostname already has DNS configuration
+      const hasDNSConfig = Object.entries(labels).some(
+        ([key, value]) =>
+          key.startsWith(LabelValidator.DNS_LABEL_PREFIX) &&
+          key.includes("hostname") &&
+          value === hostname
+      );
+
+      if (!hasDNSConfig) {
+        traefikLabels.push({
+          hostname,
+          type: "A",
+          proxied: true,
+        });
+        this.logger.debug(
+          `Created default DNS configuration for Traefik hostname: ${hostname}`
+        );
+      }
+    });
+
+    return traefikLabels;
+  }
+
+  private validateDNSLabels(
     serviceName: string,
     labels: { [key: string]: string }
   ): DNSLabel[] {
@@ -28,6 +89,37 @@ export class LabelValidator {
     const baseLabels = new Map<string, DNSLabel>();
 
     logger.debug("Starting label validation", { serviceName, labels });
+
+    // Extract hostnames from Traefik rules if enabled
+    if (config.app.useTraefikLabels) {
+      Object.entries(labels).forEach(([key, value]) => {
+        if (key.startsWith("traefik.http.routers.") && key.endsWith(".rule")) {
+          const match = value.match(LabelValidator.TRAEFIK_HOST_REGEX);
+          if (match) {
+            const hostname = match[1];
+            if (!labels[`${LabelValidator.DNS_LABEL_PREFIX}hostname`]) {
+              labels[`${LabelValidator.DNS_LABEL_PREFIX}hostname`] = hostname;
+              // Apply default configuration from environment
+              labels[`${LabelValidator.DNS_LABEL_PREFIX}type`] =
+                config.app.traefik.defaultRecordType;
+              labels[`${LabelValidator.DNS_LABEL_PREFIX}proxied`] = String(
+                config.app.traefik.defaultProxied
+              );
+              labels[`${LabelValidator.DNS_LABEL_PREFIX}ttl`] = String(
+                config.app.traefik.defaultTTL
+              );
+
+              if (config.app.traefik.defaultContent) {
+                labels[`${LabelValidator.DNS_LABEL_PREFIX}content`] =
+                  config.app.traefik.defaultContent;
+              }
+
+              logger.debug(`Using Traefik hostname as default: ${hostname}`);
+            }
+          }
+        }
+      });
+    }
 
     // Afficher tous les labels pour le débogage
     Object.entries(labels).forEach(([key, value]) => {
@@ -38,14 +130,16 @@ export class LabelValidator {
     for (const [key, value] of Object.entries(labels)) {
       // Normaliser la clé pour la comparaison
       const normalizedKey = key.toLowerCase();
-      if (!normalizedKey.startsWith(this.DNS_LABEL_PREFIX.toLowerCase())) {
+      if (
+        !normalizedKey.startsWith(LabelValidator.DNS_LABEL_PREFIX.toLowerCase())
+      ) {
         logger.debug(`Skipping non-DNS label: ${key}`);
         continue;
       }
 
       logger.debug(`Processing DNS label: ${key} = ${value}`);
 
-      const labelName = key.substring(this.DNS_LABEL_PREFIX.length);
+      const labelName = key.substring(LabelValidator.DNS_LABEL_PREFIX.length);
       // Gérer les cas comme "hostname.v6" ou "type.v6"
       const parts = labelName.split(".");
       const baseKey = parts[0];
@@ -68,7 +162,9 @@ export class LabelValidator {
           logger.debug(`Set hostname for group ${labelGroup}: ${value}`);
           break;
         case "type":
-          if (!this.VALID_RECORD_TYPES.includes(value.toUpperCase())) {
+          if (
+            !LabelValidator.VALID_RECORD_TYPES.includes(value.toUpperCase())
+          ) {
             logger.warn(
               `Invalid DNS record type "${value}" for service ${serviceName}, using "A" instead`
             );
@@ -125,7 +221,7 @@ export class LabelValidator {
           }
           break;
         case "AAAA":
-          if (label.content && !this.isValidIPv6(label.content)) {
+          if (label.content && !LabelValidator.isValidIPv6(label.content)) {
             logger.error(
               `Invalid IPv6 address "${label.content}" in service ${serviceName} (group: ${group})`
             );
@@ -145,7 +241,8 @@ export class LabelValidator {
   }
 
   private static isValidIPv6(ip: string): boolean {
-    const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+    const ipv6Regex =
+      /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:)*:[0-9a-fA-F]{1,4}|:(?::[0-9a-fA-F]{1,4})*$/;
     return ipv6Regex.test(ip);
   }
 }

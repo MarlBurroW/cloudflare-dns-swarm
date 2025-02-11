@@ -37,10 +37,8 @@ export class DNSService {
   ): Promise<void> {
     try {
       this.logger.debug("Handling service update", { serviceName, labels });
-      const validLabels = LabelValidator.validateServiceLabels(
-        serviceName,
-        labels
-      );
+      const validator = new LabelValidator();
+      const validLabels = validator.validateServiceLabels(serviceName, labels);
 
       for (const label of validLabels) {
         const dnsOptions = {

@@ -14,6 +14,7 @@ A Node.js service that automatically manages DNS records in Cloudflare based on 
 - 🏷️ Support for multiple DNS record types (A, AAAA, CNAME, MX, TXT)
 - 🚀 Public IP caching and validation
 - 💪 Fault-tolerant design with retry mechanisms
+- 🔗 Automatic DNS creation from Traefik labels (optional)
 
 ## 📋 Prerequisites
 
@@ -245,6 +246,72 @@ The service uses the following environment variables:
 - 🔄 `RETRY_ATTEMPTS`: Number of retry attempts for failed tasks
 - ⏱️ `RETRY_DELAY`: Delay between retries in milliseconds
 - ⌛ `IP_CHECK_INTERVAL`: Interval for checking public IP changes
+
+### 🔗 Traefik Integration
+
+The service can automatically create DNS records from your Traefik Host rules:
+
+- 🎯 `USE_TRAEFIK_LABELS`: Enable Traefik labels detection (default: false)
+- 📝 `TRAEFIK_DEFAULT_RECORD_TYPE`: Default record type for Traefik hosts (A, AAAA, CNAME, etc.)
+- 🌐 `TRAEFIK_DEFAULT_CONTENT`: Default content for records (IP or domain for CNAME)
+- 🛡️ `TRAEFIK_DEFAULT_PROXIED`: Enable/disable Cloudflare proxy by default
+- ⏲️ `TRAEFIK_DEFAULT_TTL`: Default TTL for records
+
+#### Examples
+
+**Basic Usage with Traefik**
+
+Just enable the feature and your Traefik Host rules will automatically create DNS records:
+
+```yaml
+services:
+  webapp:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webapp.rule=Host(`app.domain.com`)"
+      # That's it! This will:
+      # - Create an A record for app.domain.com
+      # - Use your public IP as content (fetched from ipify.org)
+      # - Enable Cloudflare proxy by default
+      # - Set TTL to 1 (automatic)
+# You can customize this behavior with environment variables:
+# USE_TRAEFIK_LABELS=true
+# TRAEFIK_DEFAULT_RECORD_TYPE=A
+# TRAEFIK_DEFAULT_CONTENT=203.0.113.1  # Optional: specific IP
+# TRAEFIK_DEFAULT_PROXIED=true
+# TRAEFIK_DEFAULT_TTL=1
+```
+
+**Custom Default Behavior**
+
+Create CNAME records by default:
+
+```env
+USE_TRAEFIK_LABELS=true
+TRAEFIK_DEFAULT_RECORD_TYPE=CNAME
+TRAEFIK_DEFAULT_CONTENT=origin.domain.com
+TRAEFIK_DEFAULT_PROXIED=true
+```
+
+**Mixed Configuration**
+
+Use both Traefik and explicit DNS configuration:
+
+```yaml
+services:
+  webapp:
+    labels:
+      # This will use default DNS settings
+      - "traefik.http.routers.app.rule=Host(`app.domain.com`)"
+
+      # This will use explicit DNS settings
+      - "traefik.http.routers.api.rule=Host(`api.domain.com`)"
+      - "dns.cloudflare.hostname.api=api.domain.com"
+      - "dns.cloudflare.type.api=CNAME"
+      - "dns.cloudflare.content.api=origin.domain.com"
+```
+
+> **Note**: Explicit DNS configuration always takes precedence over Traefik defaults.
 
 ## 🤝 Contributing
 
