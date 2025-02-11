@@ -86,6 +86,28 @@ Works with both Docker containers and Swarm services. Here are examples for both
 - `dns.cloudflare.ttl`: Time to live in seconds (optional, default: 1)
 - `dns.cloudflare.proxied`: Enable/disable Cloudflare proxy (optional, default: true)
 
+### 🎯 Default Behaviors
+
+The service includes smart defaults to minimize configuration:
+
+- 🔤 **Record Type**: If not specified, defaults to `A` record
+- 🌐 **Record Content**:
+  - For `A` records: Uses public IP from ipify.org if not specified
+  - For `AAAA` records: Uses public IPv6 if available, else skips record creation
+  - For other types (`CNAME`, `TXT`, `MX`): Content is required
+- ⚡ **Proxy Status**: Defaults to `true` (traffic proxied through Cloudflare)
+- ⏱️ **TTL**: Defaults to 1 (automatic)
+
+Example with minimal configuration:
+
+```bash
+# Only hostname specified - creates an A record with public IP
+docker service create \
+  --name my-service \
+  --label dns.cloudflare.hostname=api.domain.com \
+  your-image
+```
+
 ### 📦 Docker Container
 
 ```bash
