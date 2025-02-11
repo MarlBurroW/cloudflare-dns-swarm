@@ -51,15 +51,15 @@ export class DockerService extends EventEmitter {
 
       // Essayer d'abord en mode Swarm
       try {
-        const services = await this.docker.listServices({
-          filters: {
-            label: ["dns.cloudflare.hostname=*"],
-          },
-        });
+        const services = await this.docker.listServices({});
 
         this.logger.debug("Found services in Swarm mode", {
           count: services.length,
           services: services.map((s) => s.Spec?.Name),
+          details: services.map((s) => ({
+            name: s.Spec?.Name,
+            labels: s.Spec?.Labels,
+          })),
         });
 
         for (const service of services) {
@@ -127,15 +127,15 @@ export class DockerService extends EventEmitter {
       this.logger.debug("Received Docker event", {
         type: event.Type,
         action: event.Action,
-        id: event.actor.ID,
-        actor: event.actor,
+        id: event.Actor.ID,
+        actor: event.Actor,
       });
 
       let labels, serviceName;
 
       // Gérer les événements Swarm
       if (event.Type === "service") {
-        const service = await this.docker.getService(event.actor.ID).inspect();
+        const service = await this.docker.getService(event.Actor.ID).inspect();
         labels = service.Spec?.Labels || {};
         serviceName = service.Spec?.Name;
         this.logger.debug("Service event details", {
@@ -147,7 +147,7 @@ export class DockerService extends EventEmitter {
       // Gérer les événements de conteneurs
       else if (event.Type === "container") {
         const container = await this.docker
-          .getContainer(event.actor.ID)
+          .getContainer(event.Actor.ID)
           .inspect();
         labels = container.Config?.Labels || {};
         serviceName = container.Name.replace(/^\//, "");
