@@ -3,6 +3,7 @@
 A Node.js service that automatically manages DNS records in Cloudflare based on Docker events. It monitors both Docker containers and Swarm services for specific labels and updates corresponding DNS records.
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/marlburrow/cloudflare-dns-swarm)](https://hub.docker.com/r/marlburrow/cloudflare-dns-swarm)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/marlburrow/cloudflare-dns-swarm?logo=github)](https://github.com/marlburrow/cloudflare-dns-swarm/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## ✨ Features
