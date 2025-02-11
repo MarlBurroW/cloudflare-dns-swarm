@@ -9,18 +9,18 @@ A Node.js service that automatically manages DNS records in Cloudflare based on 
 
 ## ✨ Features
 
-🔄 Automatic DNS record management based on Docker service labels
-👀 Real-time monitoring of both Docker containers and Swarm services events
-🏷️ Support for multiple DNS record types (A, AAAA, CNAME, MX, TXT)
-🚀 Public IP caching and validation
-💪 Fault-tolerant design with retry mechanisms
+- 🔄 Automatic DNS record management based on Docker service labels
+- 👀 Real-time monitoring of both Docker containers and Swarm services events
+- 🏷️ Support for multiple DNS record types (A, AAAA, CNAME, MX, TXT)
+- 🚀 Public IP caching and validation
+- 💪 Fault-tolerant design with retry mechanisms
 
 ## 📋 Prerequisites
 
-📦 Node.js 20 or higher
-🐳 Docker (works in both Swarm and standalone mode)
-☁️ Cloudflare account and API token
-🔌 Access to Docker socket
+- 📦 Node.js 20 or higher
+- 🐳 Docker (works in both Swarm and standalone mode)
+- ☁️ Cloudflare account and API token
+- 🔌 Access to Docker socket
 
 ## 🚀 Installation
 
@@ -178,11 +178,11 @@ docker service create \
 
 The service uses the following environment variables:
 
-🔑 `CLOUDFLARE_TOKEN`: Your Cloudflare API token
-📝 `LOG_LEVEL`: Logging level (debug, info, warn, error)
-🔄 `RETRY_ATTEMPTS`: Number of retry attempts for failed tasks
-⏱️ `RETRY_DELAY`: Delay between retries in milliseconds
-⌛ `IP_CHECK_INTERVAL`: Interval for checking public IP changes
+- 🔑 `CLOUDFLARE_TOKEN`: Your Cloudflare API token
+- 📝 `LOG_LEVEL`: Logging level (debug, info, warn, error)
+- 🔄 `RETRY_ATTEMPTS`: Number of retry attempts for failed tasks
+- ⏱️ `RETRY_DELAY`: Delay between retries in milliseconds
+- ⌛ `IP_CHECK_INTERVAL`: Interval for checking public IP changes
 
 ## 🤝 Contributing
 
