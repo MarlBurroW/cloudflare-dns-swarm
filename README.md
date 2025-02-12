@@ -22,8 +22,8 @@ A Node.js service that automatically manages DNS records in Cloudflare based on 
 
 - 📦 Node.js 20 or higher
 - 🐳 Docker (works in both Swarm and standalone mode)
-- ☁️ Cloudflare account and API token
-- 🔌 Access to Docker socket
+- ☁️ Cloudflare account and API token with DNS edit permissions
+- 🔌 Access to Docker socket (read-only is sufficient)
 
 ## 🚀 Installation
 
@@ -213,24 +213,24 @@ The following environment variables can be used to configure the application:
 
 ### Core Settings
 
-| Variable            | Description                              | Default                |
-| ------------------- | ---------------------------------------- | ---------------------- |
-| `CLOUDFLARE_TOKEN`  | Cloudflare API token                     | Required               |
-| `DOCKER_SOCKET`     | Docker socket path                       | `/var/run/docker.sock` |
-| `LOG_LEVEL`         | Logging level (debug, info, warn, error) | `info`                 |
-| `RETRY_ATTEMPTS`    | Number of retry attempts                 | `3`                    |
-| `RETRY_DELAY`       | Delay between retries (ms)               | `300000`               |
-| `IP_CHECK_INTERVAL` | IP check interval (ms)                   | `3600000`              |
+| Variable            | Description                              | Default                | Required |
+| ------------------- | ---------------------------------------- | ---------------------- | -------- |
+| `CLOUDFLARE_TOKEN`  | Cloudflare API token                     | -                      | Yes      |
+| `DOCKER_SOCKET`     | Docker socket path                       | `/var/run/docker.sock` | No       |
+| `LOG_LEVEL`         | Logging level (debug, info, warn, error) | `info`                 | No       |
+| `RETRY_ATTEMPTS`    | Number of retry attempts                 | `3`                    | No       |
+| `RETRY_DELAY`       | Delay between retries (ms)               | `300000`               | No       |
+| `IP_CHECK_INTERVAL` | IP check interval (ms)                   | `3600000`              | No       |
 
 ### DNS Settings
 
-| Variable                  | Description                     | Default |
-| ------------------------- | ------------------------------- | ------- |
-| `USE_TRAEFIK_LABELS`      | Enable Traefik label support    | `false` |
-| `DNS_DEFAULT_RECORD_TYPE` | Default DNS record type         | `A`     |
-| `DNS_DEFAULT_CONTENT`     | Default record content          |         |
-| `DNS_DEFAULT_PROXIED`     | Default Cloudflare proxy status | `true`  |
-| `DNS_DEFAULT_TTL`         | Default TTL                     | `1`     |
+| Variable                  | Description                     | Default | Required |
+| ------------------------- | ------------------------------- | ------- | -------- |
+| `USE_TRAEFIK_LABELS`      | Enable Traefik label support    | `false` | No       |
+| `DNS_DEFAULT_RECORD_TYPE` | Default DNS record type         | `A`     | No       |
+| `DNS_DEFAULT_CONTENT`     | Default record content          | -       | No       |
+| `DNS_DEFAULT_PROXIED`     | Default Cloudflare proxy status | `true`  | No       |
+| `DNS_DEFAULT_TTL`         | Default TTL                     | `1`     | No       |
 
 ### Examples
 
@@ -255,6 +255,14 @@ DNS_DEFAULT_TTL=3600
 ### 🔗 Traefik Integration
 
 The service can automatically create DNS records from your Traefik Host rules.
+
+#### Important Notes
+
+- Traefik integration must be explicitly enabled with `USE_TRAEFIK_LABELS=true`
+- DNS records are only created for services with `traefik.enable=true`
+- DNS settings can be overridden using explicit dns.cloudflare.\* labels
+- Multiple hosts in a single rule are supported and will create separate DNS records
+- CNAME records require explicit content to be specified
 
 #### Configuration
 
@@ -313,13 +321,6 @@ services:
       # using the default settings
 ```
 
-> **Note**: When using Traefik integration:
->
-> - DNS records are created automatically from Host rules
-> - Default settings are used unless overridden
-> - Explicit DNS labels take precedence over defaults
-> - Multiple hosts in a single rule are supported
-
 ### Development Setup
 
 If you want to contribute or modify the code:
@@ -356,9 +357,10 @@ The development setup includes:
 
 The project uses Jest for testing. The test suite includes:
 
-- Unit tests for all services
-- Integration tests for service interactions
-- Mock implementations for external services (Docker, Cloudflare)
+- Unit tests for all services and utilities
+- Integration tests for Docker events and DNS updates
+- Validation tests for labels and configurations
+- Mock implementations for external services (Docker, Cloudflare, IP services)
 
 To run the tests:
 
@@ -372,6 +374,17 @@ yarn test:watch
 # Run tests with coverage report
 yarn test:coverage
 ```
+
+### 🔒 Error Handling & Reliability
+
+Based on the test suite, the service includes:
+
+- Automatic retries for failed DNS operations
+- IP address validation and double-checking
+- Graceful handling of Docker event failures
+- Caching of IP addresses with periodic refresh
+- Validation of all DNS record configurations
+- Fault tolerance for network issues
 
 Current test coverage: [![codecov](https://codecov.io/gh/MarlBurroW/cloudflare-dns-swarm/branch/main/graph/badge.svg)](https://codecov.io/gh/MarlBurroW/cloudflare-dns-swarm)
 
