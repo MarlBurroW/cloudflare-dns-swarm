@@ -42,6 +42,7 @@ services:
     image: node:20
     working_dir: /app
     command: yarn dev
+    init: true
     environment:
       - CLOUDFLARE_TOKEN=${CLOUDFLARE_TOKEN}
       - LOG_LEVEL=debug
@@ -51,6 +52,8 @@ services:
       - DNS_DEFAULT_CONTENT=
       - DNS_DEFAULT_PROXIED=true
       - DNS_DEFAULT_TTL=1
+      - FORCE_COLOR=1
+      - NODE_ENV=development
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - .:/app
@@ -60,3 +63,5 @@ services:
       placement:
         constraints:
           - node.role == manager
+      endpoint_mode: vip
+    tty: true

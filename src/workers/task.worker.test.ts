@@ -187,4 +187,52 @@ describe("TaskWorker", () => {
       expect(Array.from((taskWorker as any).tasks.values()).length).toBe(0);
     }, 10000);
   });
+
+  it("should handle startProcessing and stopProcessing", () => {
+    jest.useFakeTimers();
+    const worker = TaskWorker.getInstance();
+
+    // Vérifie que le processus n'est pas démarré en mode test
+    expect((worker as any).processInterval).toBeUndefined();
+
+    // Démarre manuellement le processing
+    const interval = (worker as any).startProcessing();
+    expect(interval).toBeDefined();
+
+    // Arrête le processing
+    worker.stopProcessing();
+    expect((worker as any).processInterval).toBeUndefined();
+
+    jest.useRealTimers();
+  });
+
+  it("should not process tasks if already processing", async () => {
+    const worker = TaskWorker.getInstance();
+    (worker as any).isProcessing = true;
+
+    await worker.processTasks();
+    expect(mockCloudflare.createDNSRecord).not.toHaveBeenCalled();
+  });
+
+  it("should clean up completed tasks", async () => {
+    const worker = TaskWorker.getInstance();
+    const task = {
+      id: "test-id",
+      type: TaskType.CREATE,
+      status: TaskStatus.COMPLETED,
+      attempts: 1,
+      maxAttempts: 3,
+      data: {
+        serviceName: "test-service",
+        recordType: "A",
+        name: "test.domain.com",
+        content: "1.2.3.4",
+      },
+    };
+
+    await worker.addTask(task);
+    await worker.processTasks();
+
+    expect((worker as any).tasks.size).toBe(0);
+  });
 });

@@ -47,12 +47,9 @@ export class DockerService extends EventEmitter {
 
   private async scanExistingServices(): Promise<void> {
     try {
-      this.logger.debug("Scanning existing services...");
-
       // Essayer d'abord en mode Swarm
       try {
         const services = await this.docker.listServices({});
-
         this.logger.debug("Found services in Swarm mode", {
           count: services.length,
           services: services.map((s) => s.Spec?.Name),
@@ -135,14 +132,25 @@ export class DockerService extends EventEmitter {
 
       // Gérer les événements Swarm
       if (event.Type === "service") {
-        const service = await this.docker.getService(event.Actor.ID).inspect();
-        labels = service.Spec?.Labels || {};
-        serviceName = service.Spec?.Name;
-        this.logger.debug("Service event details", {
-          serviceName,
-          labels,
-          spec: service.Spec,
-        });
+        try {
+          const service = await this.docker
+            .getService(event.Actor.ID)
+            .inspect();
+          labels = service.Spec?.Labels || {};
+          serviceName = service.Spec?.Name;
+          this.logger.debug("Service event details", {
+            serviceName,
+            labels,
+            spec: service.Spec,
+          });
+        } catch (error: any) {
+          // Ignorer silencieusement les erreurs Swarm en mode non-Swarm
+          if (error.message.includes("This node is not a swarm manager")) {
+            this.logger.debug("Ignoring Swarm event in non-Swarm mode");
+            return;
+          }
+          throw error;
+        }
       }
       // Gérer les événements de conteneurs
       else if (event.Type === "container") {
@@ -169,13 +177,8 @@ export class DockerService extends EventEmitter {
           });
         }
       }
-    } catch (error: any) {
-      this.logger.error("Error handling event", {
-        error,
-        errorMessage: error.message,
-        errorStack: error.stack,
-        event,
-      });
+    } catch (error) {
+      this.logger.error("Error handling event", { error });
     }
   }
 
