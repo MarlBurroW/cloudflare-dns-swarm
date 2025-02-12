@@ -85,38 +85,6 @@ Save this as `cloudflare-dns-stack.yml` and deploy:
 docker stack deploy -c cloudflare-dns-stack.yml cloudflare-dns
 ```
 
-### Development Setup
-
-If you want to contribute or modify the code:
-
-1. Clone the repository:
-
-```bash
-git clone https://github.com/yourusername/docker-swarm-dns-manager.git
-cd docker-swarm-dns-manager
-```
-
-2. Copy `.env.example` to `.env` and fill in your Cloudflare credentials:
-
-```bash
-cp .env.example .env
-```
-
-3. Install dependencies and start in development mode:
-
-```bash
-yarn install
-yarn dev
-# Or using docker-compose for development:
-docker compose up -d
-```
-
-The development setup includes:
-
-- Hot reloading for code changes
-- Debug level logging
-- Source maps for debugging
-
 ## 📖 Usage
 
 Works with both Docker containers and Swarm services. Here are examples for both:
@@ -314,6 +282,63 @@ services:
 ```
 
 > **Note**: Explicit DNS configuration always takes precedence over Traefik defaults.
+
+### Development Setup
+
+If you want to contribute or modify the code:
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/yourusername/docker-swarm-dns-manager.git
+cd docker-swarm-dns-manager
+```
+
+2. Copy `.env.example` to `.env` and fill in your Cloudflare credentials:
+
+```bash
+cp .env.example .env
+```
+
+3. Install dependencies and start in development mode:
+
+```bash
+yarn install
+yarn dev
+# Or using docker-compose for development:
+docker compose up -d
+```
+
+The development setup includes:
+
+- Hot reloading for code changes
+- Debug level logging
+- Source maps for debugging
+
+### 🧪 Testing
+
+The project uses Jest for testing. The test suite includes:
+
+- Unit tests for all services
+- Integration tests for service interactions
+- Mock implementations for external services (Docker, Cloudflare)
+
+To run the tests:
+
+```bash
+# Run tests
+yarn test
+
+# Run tests in watch mode
+yarn test:watch
+
+# Run tests with coverage report
+yarn test:coverage
+```
+
+Current test coverage: [![codecov](https://codecov.io/gh/MarlBurroW/cloudflare-dns-swarm/branch/main/graph/badge.svg)](https://codecov.io/gh/MarlBurroW/cloudflare-dns-swarm)
+
+The project maintains a high test coverage to ensure reliability. All new contributions should include appropriate tests.
 
 ## 🤝 Contributing
 
