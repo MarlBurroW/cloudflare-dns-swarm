@@ -22,226 +22,263 @@ export class LabelValidator {
   private static readonly DNS_LABEL_PREFIX = "dns.cloudflare.";
   private static readonly TRAEFIK_HOST_REGEX = /Host\(`([^`]+)`\)/;
 
+  private static isValidIPv6(ip: string): boolean {
+    const ipv6Regex =
+      /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:)*:[0-9a-fA-F]{1,4}|:(?::[0-9a-fA-F]{1,4})*$/;
+    return ipv6Regex.test(ip);
+  }
+
   private logger = Logger.getInstance();
 
   public validateServiceLabels(
     serviceName: string,
     labels: { [key: string]: string }
   ): DNSLabel[] {
-    this.logger.debug("Starting label validation", {
-      serviceName,
-      labels,
-    });
-    // Si on a des labels DNS explicites, on les utilise
-    if (
-      Object.keys(labels).some((key) =>
-        key.startsWith(LabelValidator.DNS_LABEL_PREFIX)
-      )
-    ) {
-      return this.validateDNSLabels(serviceName, labels);
-    }
-    // Sinon, on essaie d'extraire les labels Traefik
-    if (config.app.useTraefikLabels) {
-      return this.extractTraefikLabels(labels);
-    }
-    return [];
-  }
+    this.logger.debug("Starting label validation", { serviceName, labels });
 
-  private extractTraefikLabels(labels: { [key: string]: string }): DNSLabel[] {
-    const traefikLabels: DNSLabel[] = [];
-    const traefikHosts = new Set<string>();
-
-    // Extract all hostnames from Traefik rules
-    Object.entries(labels).forEach(([key, value]) => {
-      if (key.startsWith("traefik.http.routers.") && key.endsWith(".rule")) {
-        const match = value.match(LabelValidator.TRAEFIK_HOST_REGEX);
-        if (match) {
-          const hostname = match[1];
-          traefikHosts.add(hostname);
-          this.logger.debug(`Found Traefik hostname: ${hostname}`);
-        }
+    // Vérifier d'abord si Traefik est activé
+    if (config.app.useTraefikLabels && labels["traefik.enable"] === "true") {
+      // Extraire les labels Traefik
+      const traefikLabels = this.extractTraefikLabels(labels);
+      if (traefikLabels.length > 0) {
+        return traefikLabels;
       }
-    });
+    }
 
-    // Create DNS labels for Traefik hosts
-    traefikHosts.forEach((hostname) => {
-      traefikLabels.push({
-        hostname,
-        type: config.app.traefik.defaultRecordType,
-        content: config.app.traefik.defaultContent,
-        proxied: config.app.traefik.defaultProxied,
-        ttl: config.app.traefik.defaultTTL,
-      });
-      this.logger.debug(
-        `Created default DNS configuration for Traefik hostname: ${hostname}`
-      );
-    });
-
-    return traefikLabels;
+    // Sinon, utiliser les labels DNS explicites
+    return this.extractDNSLabels(serviceName, labels);
   }
 
-  private validateDNSLabels(
+  private validateDNSLabel(
+    serviceName: string,
+    label: DNSLabel,
+    includeDefaults: boolean = false
+  ): DNSLabel | null {
+    if (!label.hostname) {
+      this.logger.error(
+        `Missing required hostname for DNS configuration in service ${serviceName}`
+      );
+      return null;
+    }
+
+    // Commencer avec les propriétés obligatoires
+    const finalLabel: DNSLabel = {
+      hostname: label.hostname,
+      type: this.validateRecordType(serviceName, label.type),
+    };
+
+    // Gérer proxied selon les règles suivantes :
+    // 1. Si explicitement défini dans le label, utiliser cette valeur
+    // 2. Si type A, toujours utiliser true sauf si explicitement défini autrement
+    // 3. Si type AAAA, utiliser false par défaut
+    // 4. Sinon, utiliser la valeur par défaut si includeDefaults est true
+    if (label.proxied !== undefined) {
+      finalLabel.proxied = label.proxied;
+    } else if (finalLabel.type === "A") {
+      finalLabel.proxied = true; // Toujours true pour type A par défaut
+    } else if (finalLabel.type === "AAAA") {
+      finalLabel.proxied = false; // Toujours false pour type AAAA par défaut
+    } else if (includeDefaults) {
+      finalLabel.proxied = config.app.defaults.proxied;
+    }
+
+    // Gérer le contenu
+    if (label.content !== undefined) {
+      finalLabel.content = label.content;
+    } else if (finalLabel.type === "CNAME") {
+      this.logger.error(
+        `Missing required content for CNAME record in service ${serviceName}`
+      );
+      return null;
+    }
+
+    // Gérer le TTL
+    if (label.ttl !== undefined && !isNaN(label.ttl) && label.ttl > 0) {
+      finalLabel.ttl = label.ttl;
+    } else if (includeDefaults) {
+      finalLabel.ttl = config.app.defaults.ttl;
+    }
+
+    // Validations spécifiques
+    if (
+      finalLabel.type === "AAAA" &&
+      finalLabel.content &&
+      !LabelValidator.isValidIPv6(finalLabel.content)
+    ) {
+      this.logger.error(
+        `Invalid IPv6 address "${finalLabel.content}" in service ${serviceName}`
+      );
+      return null;
+    }
+
+    // Nettoyer les propriétés undefined
+    return Object.fromEntries(
+      Object.entries(finalLabel).filter(([_, v]) => v !== undefined)
+    ) as DNSLabel;
+  }
+
+  private extractDNSLabels(
     serviceName: string,
     labels: { [key: string]: string }
   ): DNSLabel[] {
-    const dnsLabels: DNSLabel[] = [];
-    const baseLabels = new Map<string, DNSLabel>();
+    const groups = new Map<string, { [key: string]: string }>();
+    let defaultValues: { [key: string]: string } = {};
 
-    logger.debug("Starting label validation", { serviceName, labels });
+    // D'abord extraire les valeurs par défaut
+    Object.entries(labels).forEach(([key, value]) => {
+      if (!key.startsWith(LabelValidator.DNS_LABEL_PREFIX)) return;
+      const labelPath = key.replace(LabelValidator.DNS_LABEL_PREFIX, "");
+      if (!labelPath.includes(".")) {
+        defaultValues[labelPath] = value;
+      }
+    });
 
-    // Extract hostnames from Traefik rules if enabled
-    if (config.app.useTraefikLabels) {
-      Object.entries(labels).forEach(([key, value]) => {
-        if (key.startsWith("traefik.http.routers.") && key.endsWith(".rule")) {
-          const match = value.match(LabelValidator.TRAEFIK_HOST_REGEX);
-          if (match) {
-            const hostname = match[1];
-            if (!labels[`${LabelValidator.DNS_LABEL_PREFIX}hostname`]) {
-              labels[`${LabelValidator.DNS_LABEL_PREFIX}hostname`] = hostname;
-              // Apply default configuration from environment
-              labels[`${LabelValidator.DNS_LABEL_PREFIX}type`] =
-                config.app.traefik.defaultRecordType;
-              labels[`${LabelValidator.DNS_LABEL_PREFIX}proxied`] = String(
-                config.app.traefik.defaultProxied
-              );
-              labels[`${LabelValidator.DNS_LABEL_PREFIX}ttl`] = String(
-                config.app.traefik.defaultTTL
-              );
+    // Regrouper les labels par groupe
+    Object.entries(labels).forEach(([key, value]) => {
+      if (!key.startsWith(LabelValidator.DNS_LABEL_PREFIX)) return;
 
-              if (config.app.traefik.defaultContent) {
-                labels[`${LabelValidator.DNS_LABEL_PREFIX}content`] =
-                  config.app.traefik.defaultContent;
-              }
+      const labelPath = key.replace(LabelValidator.DNS_LABEL_PREFIX, "");
+      const parts = labelPath.split(".");
 
-              logger.debug(`Using Traefik hostname as default: ${hostname}`);
+      let group = "default";
+      let property = parts[0];
+
+      if (parts.length > 1) {
+        if (
+          parts[0] === "hostname" ||
+          parts[0] === "type" ||
+          parts[0] === "content" ||
+          parts[0] === "proxied" ||
+          parts[0] === "ttl"
+        ) {
+          // Format: dns.cloudflare.property.group
+          [property, group] = parts;
+        } else {
+          // Format: dns.cloudflare.group.property
+          [group, property] = parts;
+        }
+      }
+
+      if (!groups.has(group)) {
+        groups.set(group, {});
+      }
+
+      groups.get(group)![property] = value;
+    });
+
+    // Appliquer les valeurs par défaut à chaque groupe
+    groups.forEach((groupLabels) => {
+      Object.entries(defaultValues).forEach(([key, value]) => {
+        if (groupLabels[key] === undefined) {
+          groupLabels[key] = value;
+        }
+      });
+    });
+
+    // Convertir les groupes en labels DNS
+    return Array.from(groups.entries())
+      .map(([_, groupLabels]) => {
+        const label: DNSLabel = {
+          hostname: groupLabels.hostname,
+          type: groupLabels.type?.toUpperCase(),
+          content: groupLabels.content,
+          // Définir proxied uniquement si explicitement spécifié
+          ...(groupLabels.proxied !== undefined && {
+            proxied: groupLabels.proxied === "true",
+          }),
+          ttl: parseInt(groupLabels.ttl, 10),
+        };
+
+        // Inclure les valeurs par défaut pour :
+        // - Les enregistrements A
+        // - Les enregistrements sans type (qui deviendront A)
+        // - Les enregistrements AAAA et CNAME
+        const includeDefaults =
+          label.type === "A" ||
+          label.type === undefined ||
+          label.type === "AAAA" ||
+          label.type === "CNAME";
+
+        return this.validateDNSLabel(serviceName, label, includeDefaults);
+      })
+      .filter((label): label is DNSLabel => label !== null);
+  }
+
+  private validateRecordType(serviceName: string, type?: string): string {
+    if (!type) return "A";
+    const upperType = type.toUpperCase();
+    if (!LabelValidator.VALID_RECORD_TYPES.includes(upperType)) {
+      this.logger.warn(
+        `Invalid DNS record type "${type}" for service ${serviceName}, using "A" instead`
+      );
+      return "A";
+    }
+    return upperType;
+  }
+
+  private validateTTL(serviceName: string, ttl?: number): number {
+    if (!ttl || isNaN(ttl) || ttl < 1) {
+      this.logger.warn(
+        `Invalid TTL value "${ttl}" for service ${serviceName}, using default`
+      );
+      return 1;
+    }
+    return ttl;
+  }
+
+  private extractTraefikLabels(labels: { [key: string]: string }): DNSLabel[] {
+    if (!labels["traefik.enable"] || labels["traefik.enable"] !== "true") {
+      return [];
+    }
+
+    const hostRules = Object.entries(labels)
+      .filter(
+        ([key]) =>
+          key.startsWith("traefik.http.routers.") && key.endsWith(".rule")
+      )
+      .map(([_, value]) => value);
+
+    const processedHosts = new Set<string>();
+    const traefikLabels: DNSLabel[] = [];
+
+    for (const rule of hostRules) {
+      const hostMatches = rule.match(/Host\(`([^`]+)`\)/g);
+      if (hostMatches) {
+        for (const match of hostMatches) {
+          const hostMatch = match.match(LabelValidator.TRAEFIK_HOST_REGEX);
+          if (hostMatch && hostMatch[1] && !processedHosts.has(hostMatch[1])) {
+            const hostname = hostMatch[1];
+            processedHosts.add(hostname);
+
+            // Créer le label avec les valeurs par défaut
+            const label: DNSLabel = {
+              hostname,
+              type: config.app.defaults.recordType,
+              proxied: config.app.defaults.proxied,
+              ttl: config.app.defaults.ttl,
+            };
+
+            // Surcharger avec les valeurs explicites des labels DNS
+            if (labels["dns.cloudflare.type"]) {
+              label.type = labels["dns.cloudflare.type"];
+            }
+            if (labels["dns.cloudflare.content"]) {
+              label.content = labels["dns.cloudflare.content"];
+            }
+            if (labels["dns.cloudflare.proxied"] !== undefined) {
+              label.proxied = labels["dns.cloudflare.proxied"] === "true";
+            }
+
+            // Important : passer includeDefaults=true pour appliquer les valeurs par défaut
+            const validLabel = this.validateDNSLabel("traefik", label, true);
+            if (validLabel) {
+              traefikLabels.push(validLabel);
             }
           }
         }
-      });
-    }
-
-    // Afficher tous les labels pour le débogage
-    Object.entries(labels).forEach(([key, value]) => {
-      logger.debug(`Found label: "${key}" = "${value}"`);
-    });
-
-    // Parcourir tous les labels pour trouver les configurations DNS
-    for (const [key, value] of Object.entries(labels)) {
-      // Normaliser la clé pour la comparaison
-      const normalizedKey = key.toLowerCase();
-      if (
-        !normalizedKey.startsWith(LabelValidator.DNS_LABEL_PREFIX.toLowerCase())
-      ) {
-        logger.debug(`Skipping non-DNS label: ${key}`);
-        continue;
-      }
-
-      logger.debug(`Processing DNS label: ${key} = ${value}`);
-
-      const labelName = key.substring(LabelValidator.DNS_LABEL_PREFIX.length);
-      // Gérer les cas comme "hostname.v6" ou "type.v6"
-      const parts = labelName.split(".");
-      const baseKey = parts[0];
-      const suffix = parts.slice(1).join(".");
-      const labelGroup = suffix || "default";
-
-      if (!baseLabels.has(labelGroup)) {
-        baseLabels.set(labelGroup, {
-          hostname: "",
-          type: "A", // Type par défaut
-        });
-        logger.debug(`Created new label group: ${labelGroup}`);
-      }
-
-      const label = baseLabels.get(labelGroup)!;
-
-      switch (baseKey) {
-        case "hostname":
-          label.hostname = value;
-          logger.debug(`Set hostname for group ${labelGroup}: ${value}`);
-          break;
-        case "type":
-          if (
-            !LabelValidator.VALID_RECORD_TYPES.includes(value.toUpperCase())
-          ) {
-            logger.warn(
-              `Invalid DNS record type "${value}" for service ${serviceName}, using "A" instead`
-            );
-            label.type = "A";
-          } else {
-            label.type = value.toUpperCase();
-            logger.debug(`Set type for group ${labelGroup}: ${value}`);
-          }
-          break;
-        case "content":
-          label.content = value;
-          logger.debug(`Set content for group ${labelGroup}: ${value}`);
-          break;
-        case "ttl":
-          const ttl = parseInt(value, 10);
-          if (isNaN(ttl) || ttl < 1) {
-            logger.warn(
-              `Invalid TTL value "${value}" for service ${serviceName}, using default`
-            );
-          } else {
-            label.ttl = ttl;
-            logger.debug(`Set TTL for group ${labelGroup}: ${ttl}`);
-          }
-          break;
-        case "proxied":
-          label.proxied = value.toLowerCase() === "true";
-          logger.debug(`Set proxied for group ${labelGroup}: ${label.proxied}`);
-          break;
-        default:
-          logger.warn(`Unknown DNS label key: ${baseKey}`);
-          break;
       }
     }
 
-    // Valider chaque groupe de labels
-    for (const [group, label] of baseLabels.entries()) {
-      logger.debug(`Validating label group: ${group}`, { label });
-
-      if (!label.hostname) {
-        logger.error(
-          `Missing required hostname for DNS configuration in service ${serviceName} (group: ${group})`
-        );
-        continue;
-      }
-
-      // Validation spécifique par type
-      switch (label.type) {
-        case "CNAME":
-          if (!label.content) {
-            logger.error(
-              `Missing required content for CNAME record in service ${serviceName} (group: ${group})`
-            );
-            continue;
-          }
-          break;
-        case "AAAA":
-          if (label.content && !LabelValidator.isValidIPv6(label.content)) {
-            logger.error(
-              `Invalid IPv6 address "${label.content}" in service ${serviceName} (group: ${group})`
-            );
-            continue;
-          }
-          break;
-      }
-
-      dnsLabels.push(label);
-      logger.debug(`Added valid DNS label`, { group, label });
-    }
-
-    logger.info(
-      `Validated ${dnsLabels.length} DNS labels for service ${serviceName}`
-    );
-    return dnsLabels;
-  }
-
-  private static isValidIPv6(ip: string): boolean {
-    const ipv6Regex =
-      /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:)*:[0-9a-fA-F]{1,4}|:(?::[0-9a-fA-F]{1,4})*$/;
-    return ipv6Regex.test(ip);
+    return traefikLabels;
   }
 }

@@ -209,29 +209,71 @@ docker service create \
 
 ## ⚙️ Configuration
 
-The service uses the following environment variables:
+The following environment variables can be used to configure the application:
 
-- 🔑 `CLOUDFLARE_TOKEN`: Your Cloudflare API token
-- 📝 `LOG_LEVEL`: Logging level (debug, info, warn, error)
-- 🔄 `RETRY_ATTEMPTS`: Number of retry attempts for failed tasks
-- ⏱️ `RETRY_DELAY`: Delay between retries in milliseconds
-- ⌛ `IP_CHECK_INTERVAL`: Interval for checking public IP changes
+### Core Settings
+
+| Variable            | Description                              | Default                |
+| ------------------- | ---------------------------------------- | ---------------------- |
+| `CLOUDFLARE_TOKEN`  | Cloudflare API token                     | Required               |
+| `DOCKER_SOCKET`     | Docker socket path                       | `/var/run/docker.sock` |
+| `LOG_LEVEL`         | Logging level (debug, info, warn, error) | `info`                 |
+| `RETRY_ATTEMPTS`    | Number of retry attempts                 | `3`                    |
+| `RETRY_DELAY`       | Delay between retries (ms)               | `300000`               |
+| `IP_CHECK_INTERVAL` | IP check interval (ms)                   | `3600000`              |
+
+### DNS Settings
+
+| Variable                  | Description                     | Default |
+| ------------------------- | ------------------------------- | ------- |
+| `USE_TRAEFIK_LABELS`      | Enable Traefik label support    | `false` |
+| `DNS_DEFAULT_RECORD_TYPE` | Default DNS record type         | `A`     |
+| `DNS_DEFAULT_CONTENT`     | Default record content          |         |
+| `DNS_DEFAULT_PROXIED`     | Default Cloudflare proxy status | `true`  |
+| `DNS_DEFAULT_TTL`         | Default TTL                     | `1`     |
+
+### Examples
+
+**Basic Configuration**
+
+```env
+CLOUDFLARE_TOKEN=your_token_here
+USE_TRAEFIK_LABELS=true
+DNS_DEFAULT_RECORD_TYPE=A
+DNS_DEFAULT_PROXIED=true
+```
+
+**CNAME Configuration**
+
+```env
+DNS_DEFAULT_RECORD_TYPE=CNAME
+DNS_DEFAULT_CONTENT=origin.domain.com
+DNS_DEFAULT_PROXIED=false
+DNS_DEFAULT_TTL=3600
+```
 
 ### 🔗 Traefik Integration
 
-The service can automatically create DNS records from your Traefik Host rules:
+The service can automatically create DNS records from your Traefik Host rules.
 
-- 🎯 `USE_TRAEFIK_LABELS`: Enable Traefik labels detection (default: false)
-- 📝 `TRAEFIK_DEFAULT_RECORD_TYPE`: Default record type for Traefik hosts (A, AAAA, CNAME, etc.)
-- 🌐 `TRAEFIK_DEFAULT_CONTENT`: Default content for records (IP or domain for CNAME)
-- 🛡️ `TRAEFIK_DEFAULT_PROXIED`: Enable/disable Cloudflare proxy by default
-- ⏲️ `TRAEFIK_DEFAULT_TTL`: Default TTL for records
+#### Configuration
+
+Enable Traefik integration and configure default behavior:
+
+```env
+# Enable Traefik integration
+USE_TRAEFIK_LABELS=true
+
+# Configure default DNS settings (optional)
+DNS_DEFAULT_RECORD_TYPE=A
+DNS_DEFAULT_CONTENT=
+DNS_DEFAULT_PROXIED=true
+DNS_DEFAULT_TTL=1
+```
 
 #### Examples
 
-**Basic Usage with Traefik**
-
-Just enable the feature and your Traefik Host rules will automatically create DNS records:
+**Basic Usage**
 
 ```yaml
 services:
@@ -239,49 +281,44 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.webapp.rule=Host(`app.domain.com`)"
-      # That's it! This will:
-      # - Create an A record for app.domain.com
-      # - Use your public IP as content (fetched from ipify.org)
-      # - Enable Cloudflare proxy by default
-      # - Set TTL to 1 (automatic)
-# You can customize this behavior with environment variables:
-# USE_TRAEFIK_LABELS=true
-# TRAEFIK_DEFAULT_RECORD_TYPE=A
-# TRAEFIK_DEFAULT_CONTENT=203.0.113.1  # Optional: specific IP
-# TRAEFIK_DEFAULT_PROXIED=true
-# TRAEFIK_DEFAULT_TTL=1
+      # This will create:
+      # - An A record for app.domain.com
+      # - Using your public IP as content
+      # - With Cloudflare proxy enabled
 ```
 
-**Custom Default Behavior**
-
-Create CNAME records by default:
-
-```env
-USE_TRAEFIK_LABELS=true
-TRAEFIK_DEFAULT_RECORD_TYPE=CNAME
-TRAEFIK_DEFAULT_CONTENT=origin.domain.com
-TRAEFIK_DEFAULT_PROXIED=true
-```
-
-**Mixed Configuration**
-
-Use both Traefik and explicit DNS configuration:
+**Custom DNS Settings**
 
 ```yaml
 services:
   webapp:
     labels:
-      # This will use default DNS settings
-      - "traefik.http.routers.app.rule=Host(`app.domain.com`)"
-
-      # This will use explicit DNS settings
-      - "traefik.http.routers.api.rule=Host(`api.domain.com`)"
-      - "dns.cloudflare.hostname.api=api.domain.com"
-      - "dns.cloudflare.type.api=CNAME"
-      - "dns.cloudflare.content.api=origin.domain.com"
+      - "traefik.enable=true"
+      - "traefik.http.routers.webapp.rule=Host(`app.domain.com`)"
+      # Override default DNS settings
+      - "dns.cloudflare.type=CNAME"
+      - "dns.cloudflare.content=origin.domain.com"
+      - "dns.cloudflare.proxied=false"
 ```
 
-> **Note**: Explicit DNS configuration always takes precedence over Traefik defaults.
+**Multiple Hosts**
+
+```yaml
+services:
+  webapp:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webapp.rule=Host(`app.domain.com`) || Host(`api.domain.com`)"
+      # This will create DNS records for both domains
+      # using the default settings
+```
+
+> **Note**: When using Traefik integration:
+>
+> - DNS records are created automatically from Host rules
+> - Default settings are used unless overridden
+> - Explicit DNS labels take precedence over defaults
+> - Multiple hosts in a single rule are supported
 
 ### Development Setup
 

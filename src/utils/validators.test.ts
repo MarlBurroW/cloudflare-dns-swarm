@@ -1,5 +1,6 @@
 import { LabelValidator } from "./validators";
 import { config } from "../config/config";
+import { Logger } from "../utils/logger";
 
 describe("LabelValidator", () => {
   let validator: LabelValidator;
@@ -8,11 +9,10 @@ describe("LabelValidator", () => {
     validator = new LabelValidator();
     // Reset config defaults for tests
     config.app.useTraefikLabels = false;
-    config.app.traefik = {
-      defaultRecordType: "A",
-      defaultContent: undefined,
-      defaultProxied: true,
-      defaultTTL: 1,
+    config.app.defaults = {
+      recordType: "A",
+      proxied: true,
+      ttl: 1,
     };
   });
 
@@ -31,6 +31,7 @@ describe("LabelValidator", () => {
         hostname: "app.domain.com",
         type: "A",
         proxied: true,
+        ttl: config.app.defaults.ttl,
       });
     });
 
@@ -49,11 +50,15 @@ describe("LabelValidator", () => {
       expect(result).toContainEqual({
         hostname: "api.domain.com",
         type: "A",
+        proxied: true,
+        ttl: config.app.defaults.ttl,
       });
       expect(result).toContainEqual({
         hostname: "api.domain.com",
         type: "AAAA",
         content: "2001:db8::1",
+        proxied: false,
+        ttl: config.app.defaults.ttl,
       });
     });
 
@@ -85,7 +90,12 @@ describe("LabelValidator", () => {
 
       const result = validator.validateServiceLabels("test-service", labels);
       expect(result).toHaveLength(1);
-      expect(result[0].ttl).toBeUndefined();
+      expect(result[0]).toEqual({
+        hostname: "app.domain.com",
+        type: "A",
+        proxied: true,
+        ttl: config.app.defaults.ttl,
+      });
     });
 
     it("should require content for CNAME records", () => {
@@ -108,6 +118,65 @@ describe("LabelValidator", () => {
       expect(result).toHaveLength(1);
       expect(result[0].proxied).toBe(false);
     });
+
+    it("should handle mixed DNS configurations", () => {
+      config.app.useTraefikLabels = true;
+
+      const labels = {
+        "traefik.enable": "true",
+        "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
+        "dns.cloudflare.type": "CNAME",
+        "dns.cloudflare.content": "origin.domain.com",
+        "dns.cloudflare.proxied": "false",
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        hostname: "app.domain.com",
+        type: "CNAME",
+        content: "origin.domain.com",
+        proxied: false,
+        ttl: config.app.defaults.ttl,
+      });
+    });
+
+    it("should extract hostname from Traefik rule when no explicit DNS hostname", () => {
+      config.app.useTraefikLabels = true;
+
+      const labels = {
+        "traefik.enable": "true",
+        "traefik.http.routers.n8n.rule": "Host(`app.example.com`)",
+        "dns.cloudflare.type": "CNAME",
+        "dns.cloudflare.content": "example.com",
+        "dns.cloudflare.proxied": "false",
+      };
+
+      const result = validator.validateServiceLabels("n8n_n8n", labels);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        hostname: "app.example.com",
+        type: "CNAME",
+        content: "example.com",
+        proxied: false,
+        ttl: config.app.defaults.ttl,
+      });
+    });
+
+    it("should handle Docker Swarm service names with underscores", () => {
+      config.app.useTraefikLabels = true;
+
+      const labels = {
+        "traefik.enable": "true",
+        "traefik.http.routers.n8n.rule": "Host(`app.example.com`)",
+        "dns.cloudflare.type": "CNAME",
+        "dns.cloudflare.content": "example.com",
+      };
+
+      const result = validator.validateServiceLabels("n8n_n8n", labels);
+      expect(result).toHaveLength(1);
+      expect(result[0].hostname).toBe("app.example.com");
+    });
   });
 
   describe("Traefik integration", () => {
@@ -115,93 +184,63 @@ describe("LabelValidator", () => {
       config.app.useTraefikLabels = true;
     });
 
-    it("should create DNS records from Traefik labels", () => {
+    it("should use environment defaults", () => {
       const labels = {
         "traefik.enable": "true",
         "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
       };
 
       const result = validator.validateServiceLabels("test-service", labels);
-
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual({
         hostname: "app.domain.com",
-        type: "A",
+        type: config.app.defaults.recordType,
         proxied: true,
-        ttl: 1,
-        content: undefined,
+        ttl: config.app.defaults.ttl,
       });
-    });
-
-    it("should respect explicit DNS configuration over Traefik defaults", () => {
-      const labels = {
-        "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
-        "dns.cloudflare.hostname": "app.domain.com",
-        "dns.cloudflare.type": "CNAME",
-        "dns.cloudflare.content": "origin.domain.com",
-      };
-
-      const result = validator.validateServiceLabels("test-service", labels);
-
-      expect(result).toHaveLength(1);
-      expect(result[0]).toEqual({
-        hostname: "app.domain.com",
-        type: "CNAME",
-        content: "origin.domain.com",
-      });
-    });
-
-    it("should use Traefik environment defaults", () => {
-      config.app.traefik.defaultRecordType = "CNAME";
-      config.app.traefik.defaultContent = "origin.domain.com";
-
-      const labels = {
-        "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
-      };
-
-      const result = validator.validateServiceLabels("test-service", labels);
-
-      expect(result).toHaveLength(1);
-      expect(result[0]).toEqual({
-        hostname: "app.domain.com",
-        type: "CNAME",
-        content: "origin.domain.com",
-        proxied: true,
-        ttl: 1,
-      });
-    });
-
-    it("should handle multiple Traefik hosts", () => {
-      const labels = {
-        "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
-        "traefik.http.routers.api.rule": "Host(`api.domain.com`)",
-      };
-
-      const result = validator.validateServiceLabels("test-service", labels);
-      expect(result).toHaveLength(2);
-      expect(result.map((r) => r.hostname)).toContain("app.domain.com");
-      expect(result.map((r) => r.hostname)).toContain("api.domain.com");
     });
 
     it("should handle complex Traefik rules", () => {
       const labels = {
+        "traefik.enable": "true",
         "traefik.http.routers.app.rule":
-          "Host(`app.domain.com`) || Host(`www.domain.com`)",
+          "Host(`app.domain.com`) || Host(`api.domain.com`)",
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual({
+        hostname: "app.domain.com",
+        type: config.app.defaults.recordType,
+        proxied: true,
+        ttl: config.app.defaults.ttl,
+      });
+      expect(result).toContainEqual({
+        hostname: "api.domain.com",
+        type: config.app.defaults.recordType,
+        proxied: true,
+        ttl: config.app.defaults.ttl,
+      });
+    });
+
+    it("should handle mixed DNS configurations", () => {
+      const labels = {
+        "traefik.enable": "true",
+        "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
+        "dns.cloudflare.type": "CNAME",
+        "dns.cloudflare.content": "origin.domain.com",
+        "dns.cloudflare.proxied": "false",
       };
 
       const result = validator.validateServiceLabels("test-service", labels);
       expect(result).toHaveLength(1);
-      expect(result[0].hostname).toBe("app.domain.com");
-    });
-
-    it("should ignore Traefik labels when disabled", () => {
-      config.app.useTraefikLabels = false;
-      const labels = {
-        "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
-      };
-
-      const result = validator.validateServiceLabels("test-service", labels);
-      expect(result).toHaveLength(0);
+      expect(result[0]).toEqual({
+        hostname: "app.domain.com",
+        type: "CNAME",
+        content: "origin.domain.com",
+        proxied: false,
+        ttl: config.app.defaults.ttl,
+      });
     });
   });
 
@@ -228,6 +267,127 @@ describe("LabelValidator", () => {
 
       const result = validator.validateServiceLabels("test-service", labels);
 
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe("Default values", () => {
+    it("should use global defaults for A records", () => {
+      const labels = {
+        "dns.cloudflare.hostname": "test.domain.com",
+        "dns.cloudflare.type": "A",
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        hostname: "test.domain.com",
+        type: "A",
+        proxied: true,
+        ttl: config.app.defaults.ttl,
+      });
+    });
+
+    it("should use global defaults for CNAME records", () => {
+      const labels = {
+        "dns.cloudflare.hostname": "test.domain.com",
+        "dns.cloudflare.type": "CNAME",
+        "dns.cloudflare.content": "origin.domain.com",
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toEqual({
+        hostname: "test.domain.com",
+        type: "CNAME",
+        content: "origin.domain.com",
+        proxied: true,
+        ttl: config.app.defaults.ttl,
+      });
+    });
+  });
+
+  describe("Label Groups", () => {
+    it("should handle alternative group notation", () => {
+      const labels = {
+        "dns.cloudflare.v4.hostname": "app.domain.com",
+        "dns.cloudflare.v4.type": "A",
+        "dns.cloudflare.v6.hostname": "app.domain.com",
+        "dns.cloudflare.v6.type": "AAAA",
+        "dns.cloudflare.v6.content": "2001:db8::1",
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual({
+        hostname: "app.domain.com",
+        type: "A",
+        proxied: true,
+        ttl: config.app.defaults.ttl,
+      });
+      expect(result).toContainEqual({
+        hostname: "app.domain.com",
+        type: "AAAA",
+        content: "2001:db8::1",
+        proxied: false,
+        ttl: config.app.defaults.ttl,
+      });
+    });
+
+    it("should merge default values with group-specific values", () => {
+      const labels = {
+        "dns.cloudflare.proxied": "false",
+        "dns.cloudflare.hostname.v4": "app.domain.com",
+        "dns.cloudflare.type.v4": "CNAME",
+        "dns.cloudflare.content.v4": "origin.domain.com",
+        "dns.cloudflare.hostname.v6": "app.domain.com",
+        "dns.cloudflare.type.v6": "CNAME",
+        "dns.cloudflare.content.v6": "origin.domain.com",
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(result).toHaveLength(2);
+      expect(result[0].proxied).toBe(false);
+      expect(result[1].proxied).toBe(false);
+    });
+  });
+
+  describe("Error handling", () => {
+    let mockLogger: jest.SpyInstance;
+    let logger: Logger;
+
+    beforeEach(() => {
+      logger = Logger.getInstance();
+      mockLogger = jest.spyOn(logger as any, "warn");
+    });
+
+    afterEach(() => {
+      mockLogger.mockRestore();
+    });
+
+    it("should log error for invalid record type", () => {
+      const labels = {
+        "dns.cloudflare.hostname": "app.domain.com",
+        "dns.cloudflare.type": "INVALID",
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(mockLogger).toHaveBeenCalledWith(
+        expect.stringContaining("Invalid DNS record type")
+      );
+      expect(result[0].type).toBe("A");
+    });
+
+    it("should handle missing content for CNAME with Traefik", () => {
+      config.app.useTraefikLabels = true;
+
+      const labels = {
+        "traefik.enable": "true",
+        "traefik.http.routers.app.rule": "Host(`app.domain.com`)",
+        "dns.cloudflare.type": "CNAME", // Pas de content spécifié
+      };
+
+      const result = validator.validateServiceLabels("test-service", labels);
       expect(result).toHaveLength(0);
     });
   });

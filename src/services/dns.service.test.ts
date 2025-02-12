@@ -2,6 +2,7 @@ import { DNSService } from "./dns.service";
 import { CloudflareService } from "./cloudflare.service";
 import { IPService } from "./ip.service";
 import { TaskWorker } from "../workers/task.worker";
+import { LabelValidator } from "../utils/validators";
 
 jest.mock("./cloudflare.service");
 jest.mock("./ip.service");
@@ -12,6 +13,7 @@ describe("DNSService", () => {
   let mockCloudflare: jest.Mocked<CloudflareService>;
   let mockIpService: jest.Mocked<IPService>;
   let mockTaskWorker: jest.Mocked<TaskWorker>;
+  let validator: LabelValidator;
 
   beforeEach(() => {
     // Reset mocks
@@ -46,6 +48,7 @@ describe("DNSService", () => {
     (TaskWorker.getInstance as jest.Mock).mockReturnValue(mockTaskWorker);
 
     dnsService = DNSService.getInstance();
+    validator = new LabelValidator();
   });
 
   describe("handleServiceUpdate", () => {
@@ -102,20 +105,20 @@ describe("DNSService", () => {
     });
 
     it("should not update when record is unchanged", async () => {
-      const labels = {
-        "dns.cloudflare.hostname": "test.domain.com",
-        "dns.cloudflare.type": "A",
-        "dns.cloudflare.content": "1.2.3.4",
-      };
-
+      // Mock un enregistrement existant
       mockCloudflare.getDNSRecord.mockResolvedValue({
         id: "record123",
         type: "A",
         name: "test.domain.com",
         content: "1.2.3.4",
+        proxied: true, // Important : doit correspondre à la valeur par défaut
         ttl: 1,
-        proxied: true,
       });
+
+      const labels = {
+        "dns.cloudflare.hostname": "test.domain.com",
+        "dns.cloudflare.type": "A",
+      };
 
       await dnsService.handleServiceUpdate("test-service", labels);
 
@@ -171,6 +174,26 @@ describe("DNSService", () => {
       ).rejects.toThrow("API Error");
 
       expect(mockTaskWorker.addTask).not.toHaveBeenCalled();
+    });
+
+    it("should use correct defaults for different record types", () => {
+      const labels = {
+        "dns.cloudflare.hostname": "app.domain.com",
+        "dns.cloudflare.type": "A", // devrait avoir proxied=true
+      };
+      const result = validator.validateServiceLabels("test-service", labels);
+      expect(result[0].proxied).toBe(true);
+
+      const labelsAAAA = {
+        "dns.cloudflare.hostname": "app.domain.com",
+        "dns.cloudflare.type": "AAAA", // devrait avoir proxied=false
+        "dns.cloudflare.content": "2001:db8::1",
+      };
+      const resultAAAA = validator.validateServiceLabels(
+        "test-service",
+        labelsAAAA
+      );
+      expect(resultAAAA[0].proxied).toBe(false);
     });
   });
 });

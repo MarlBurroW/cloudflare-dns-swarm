@@ -10,6 +10,9 @@ services:
       "dns.cloudflare.hostname": "test-b.${DOMAIN:-example.com}"
       "dns.cloudflare.type": "A"
       "dns.cloudflare.proxied": "true"
+      # Uses default DNS settings
+      "traefik.enable": "true"
+      "traefik.http.routers.web.rule": "Host(`web.domain.com`)"
 
   web-cname:
     image: nginx:alpine
@@ -19,6 +22,9 @@ services:
       "dns.cloudflare.hostname": "www.${DOMAIN:-example.com}"
       "dns.cloudflare.type": "CNAME"
       "dns.cloudflare.content": "${DOMAIN:-example.com}"
+      # Override default settings
+      "traefik.enable": "true"
+      "traefik.http.routers.web.rule": "Host(`www.domain.com`)"
 
   web-multi-records:
     image: nginx:alpine
@@ -39,6 +45,12 @@ services:
     environment:
       - CLOUDFLARE_TOKEN=${CLOUDFLARE_TOKEN}
       - LOG_LEVEL=debug
+      - USE_TRAEFIK_LABELS=true
+      # Default DNS settings
+      - DNS_DEFAULT_RECORD_TYPE=A
+      - DNS_DEFAULT_CONTENT=
+      - DNS_DEFAULT_PROXIED=true
+      - DNS_DEFAULT_TTL=1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - .:/app
