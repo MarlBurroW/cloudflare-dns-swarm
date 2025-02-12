@@ -32,7 +32,6 @@ export class Application {
     });
 
     table.push(
-      ["Version", process.env.npm_package_version || "unknown"],
       ["Environment", process.env.NODE_ENV || "development"],
       ["Cloudflare Zone", process.env.CLOUDFLARE_ZONE_ID || "not set"],
       [
