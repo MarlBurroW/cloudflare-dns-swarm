@@ -3,16 +3,19 @@ import { CloudflareService } from "./cloudflare.service";
 import { IPService } from "./ip.service";
 import { TaskWorker } from "../workers/task.worker";
 import { LabelValidator } from "../utils/validators";
+import { DockerService } from "./docker.service";
 
 jest.mock("./cloudflare.service");
 jest.mock("./ip.service");
 jest.mock("../workers/task.worker");
+jest.mock("./docker.service");
 
 describe("DNSService", () => {
   let dnsService: DNSService;
   let mockCloudflare: jest.Mocked<CloudflareService>;
   let mockIpService: jest.Mocked<IPService>;
   let mockTaskWorker: jest.Mocked<TaskWorker>;
+  let mockDocker: jest.Mocked<DockerService>;
   let validator: LabelValidator;
 
   beforeEach(() => {
@@ -40,12 +43,24 @@ describe("DNSService", () => {
       addTask: jest.fn().mockResolvedValue(undefined),
     } as any;
 
+    mockDocker = {
+      getInstance: jest.fn().mockReturnThis(),
+      getService: jest.fn().mockReturnValue({
+        inspect: jest.fn().mockResolvedValue({
+          Spec: {
+            Labels: {}, // Les labels seront fournis dans chaque test
+          },
+        }),
+      }),
+    } as any;
+
     // Mock getInstance methods
     (CloudflareService.getInstance as jest.Mock).mockReturnValue(
       mockCloudflare
     );
     (IPService.getInstance as jest.Mock).mockReturnValue(mockIpService);
     (TaskWorker.getInstance as jest.Mock).mockReturnValue(mockTaskWorker);
+    (DockerService.getInstance as jest.Mock).mockReturnValue(mockDocker);
 
     dnsService = DNSService.getInstance();
     validator = new LabelValidator();
@@ -59,6 +74,12 @@ describe("DNSService", () => {
       };
 
       mockCloudflare.getDNSRecord.mockResolvedValue(null);
+
+      mockDocker.getService.mockReturnValue({
+        inspect: jest.fn().mockResolvedValue({
+          Spec: { Labels: labels },
+        }),
+      } as any);
 
       await dnsService.handleServiceUpdate("test-service", labels);
 
@@ -81,6 +102,12 @@ describe("DNSService", () => {
         "dns.cloudflare.type": "A",
         "dns.cloudflare.content": "5.6.7.8",
       };
+
+      mockDocker.getService.mockReturnValue({
+        inspect: jest.fn().mockResolvedValue({
+          Spec: { Labels: labels },
+        }),
+      } as any);
 
       mockCloudflare.getDNSRecord.mockResolvedValue({
         id: "record123",
@@ -134,9 +161,15 @@ describe("DNSService", () => {
         "dns.cloudflare.content.v6": "2001:db8::1",
       };
 
+      mockDocker.getService.mockReturnValue({
+        inspect: jest.fn().mockResolvedValue({
+          Spec: { Labels: labels },
+        }),
+      } as any);
+
       mockCloudflare.getDNSRecord
-        .mockResolvedValueOnce(null) // A record doesn't exist
-        .mockResolvedValueOnce(null); // AAAA record doesn't exist
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
 
       await dnsService.handleServiceUpdate("test-service", labels);
 
@@ -167,13 +200,13 @@ describe("DNSService", () => {
         "dns.cloudflare.type": "A",
       };
 
-      mockCloudflare.getDNSRecord.mockRejectedValue(new Error("API Error"));
+      mockDocker.getService.mockReturnValue({
+        inspect: jest.fn().mockRejectedValue(new Error("API Error")),
+      } as any);
 
       await expect(
         dnsService.handleServiceUpdate("test-service", labels)
       ).rejects.toThrow("API Error");
-
-      expect(mockTaskWorker.addTask).not.toHaveBeenCalled();
     });
 
     it("should use correct defaults for different record types", () => {

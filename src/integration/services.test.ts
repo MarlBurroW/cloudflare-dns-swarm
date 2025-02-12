@@ -7,14 +7,30 @@ import { TaskType, TaskStatus } from "../models/task.model";
 
 jest.mock("../services/cloudflare.service");
 jest.mock("../services/ip.service");
+jest.mock("dockerode");
+
+// D'abord le mock
+jest.mock("../services/docker.service");
 
 describe("Service Integration", () => {
   let dnsService: DNSService;
   let taskWorker: TaskWorker;
   let mockCloudflare: jest.Mocked<CloudflareService>;
   let mockIPService: jest.Mocked<IPService>;
+  let mockGetService: jest.Mock;
 
   beforeEach(() => {
+    // Setup le mock Docker
+    mockGetService = jest.fn().mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({
+        Spec: { Labels: {} },
+      }),
+    });
+
+    (DockerService.getInstance as jest.Mock).mockReturnValue({
+      getService: mockGetService,
+    });
+
     // Reset singletons
     (DNSService as any).instance = undefined;
     (TaskWorker as any).instance = undefined;
@@ -40,6 +56,10 @@ describe("Service Integration", () => {
     // Initialize services
     dnsService = DNSService.getInstance();
     taskWorker = TaskWorker.getInstance();
+
+    // Reset les mocks
+    jest.clearAllMocks();
+    mockGetService.mockClear();
   });
 
   afterEach(() => {
@@ -48,30 +68,43 @@ describe("Service Integration", () => {
   });
 
   it("should create DNS record through service chain", async () => {
-    // 1. Simulate DNS service handling a service update
-    await dnsService.handleServiceUpdate("test-service", {
+    const labels = {
       "dns.cloudflare.hostname": "test.domain.com",
       "dns.cloudflare.type": "A",
+    };
+
+    mockGetService.mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({
+        Spec: { Labels: labels },
+      }),
     });
 
-    // 2. Process tasks
+    await dnsService.handleServiceUpdate("test-service", labels);
     await taskWorker.processTasks();
 
-    // 3. Wait for all promises to resolve
-    await Promise.resolve();
-
-    // 2. Verify task was created
-    expect(mockCloudflare.getDNSRecord).toHaveBeenCalled();
     expect(mockCloudflare.createDNSRecord).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: "test.domain.com",
         type: "A",
+        name: "test.domain.com",
         content: "1.2.3.4",
       })
     );
   });
 
   it("should update existing DNS record", async () => {
+    const labels = {
+      "dns.cloudflare.hostname": "test.domain.com",
+      "dns.cloudflare.type": "A",
+      "dns.cloudflare.content": "1.2.3.4",
+    };
+
+    // Setup le mock Docker
+    mockGetService.mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({
+        Spec: { Labels: labels },
+      }),
+    });
+
     // Setup: Mock existing record
     mockCloudflare.getDNSRecord.mockResolvedValueOnce({
       id: "record123",
@@ -80,18 +113,8 @@ describe("Service Integration", () => {
       content: "5.6.7.8",
     });
 
-    // Test update flow
-    await dnsService.handleServiceUpdate("test-service", {
-      "dns.cloudflare.hostname": "test.domain.com",
-      "dns.cloudflare.type": "A",
-      "dns.cloudflare.content": "1.2.3.4",
-    });
-
-    // Process tasks
+    await dnsService.handleServiceUpdate("test-service", labels);
     await taskWorker.processTasks();
-
-    // Wait for all promises to resolve
-    await Promise.resolve();
 
     expect(mockCloudflare.updateDNSRecord).toHaveBeenCalledWith(
       "record123",

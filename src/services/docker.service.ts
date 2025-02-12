@@ -194,4 +194,8 @@ export class DockerService extends EventEmitter {
 
     return hasDNSLabels ? dnsLabels : null;
   }
+
+  public getService(serviceName: string) {
+    return this.docker.getService(serviceName);
+  }
 }

@@ -10,12 +10,29 @@ jest.mock("../services/cloudflare.service");
 jest.mock("../services/ip.service");
 jest.mock("dockerode");
 
+// Mock DockerService
+jest.mock("../services/docker.service", () => ({
+  DockerService: {
+    getInstance: jest.fn().mockReturnValue({
+      getService: jest.fn().mockReturnValue({
+        inspect: jest.fn().mockResolvedValue({
+          Spec: { Labels: {} },
+        }),
+      }),
+    }),
+  },
+}));
+
+// Référence au mock
+const mockDockerService = DockerService as jest.Mocked<typeof DockerService>;
+
 describe("DNS Service Default Values", () => {
   let dockerService: DockerService;
   let dnsService: DNSService;
   let taskWorker: TaskWorker;
   let mockCloudflare: jest.Mocked<CloudflareService>;
   let mockIPService: jest.Mocked<IPService>;
+  let mockGetService: jest.Mock;
 
   beforeEach(() => {
     // Reset singletons
@@ -48,6 +65,17 @@ describe("DNS Service Default Values", () => {
     );
     (IPService.getInstance as jest.Mock).mockReturnValue(mockIPService);
 
+    // Setup le mock Docker
+    mockGetService = jest.fn().mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({
+        Spec: { Labels: {} },
+      }),
+    });
+
+    (DockerService.getInstance as jest.Mock).mockReturnValue({
+      getService: mockGetService,
+    });
+
     // Initialize services
     dockerService = DockerService.getInstance();
     dnsService = DNSService.getInstance();
@@ -57,9 +85,14 @@ describe("DNS Service Default Values", () => {
   it("should apply default values correctly", async () => {
     const labels = {
       "dns.cloudflare.hostname": "test.domain.com",
-      // Pas de type spécifié = utilise A par défaut
-      // Pas de proxied spécifié = utilise true par défaut pour type A
     };
+
+    // Utiliser mockGetService directement
+    mockGetService.mockReturnValue({
+      inspect: jest.fn().mockResolvedValue({
+        Spec: { Labels: labels },
+      }),
+    });
 
     await dnsService.handleServiceUpdate("test-service", labels);
     await taskWorker.processTasks();
@@ -68,8 +101,8 @@ describe("DNS Service Default Values", () => {
       expect.objectContaining({
         type: config.app.defaults.recordType,
         name: "test.domain.com",
-        content: "1.2.3.4", // IP fournie par le mock
-        proxied: true, // Valeur par défaut pour type A
+        content: "1.2.3.4",
+        proxied: true,
         ttl: config.app.defaults.ttl,
       })
     );

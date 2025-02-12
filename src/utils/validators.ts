@@ -121,6 +121,15 @@ export class LabelValidator {
     serviceName: string,
     labels: { [key: string]: string }
   ): DNSLabel[] {
+    // Si on a des labels DNS mais pas de hostname, essayer d'extraire depuis Traefik
+    if (!labels["dns.cloudflare.hostname"] && config.app.useTraefikLabels) {
+      const traefikHostname = this.extractHostnameFromTraefikRule(labels);
+      if (traefikHostname) {
+        labels["dns.cloudflare.hostname"] = traefikHostname;
+      }
+    }
+
+    // Continuer le traitement normal
     const groups = new Map<string, { [key: string]: string }>();
     let defaultValues: { [key: string]: string } = {};
 
@@ -280,5 +289,24 @@ export class LabelValidator {
     }
 
     return traefikLabels;
+  }
+
+  private extractHostnameFromTraefikRule(labels: {
+    [key: string]: string;
+  }): string | null {
+    const rules = Object.entries(labels)
+      .filter(
+        ([key]) =>
+          key.startsWith("traefik.http.routers.") && key.endsWith(".rule")
+      )
+      .map(([_, value]) => value);
+
+    for (const rule of rules) {
+      const match = rule.match(LabelValidator.TRAEFIK_HOST_REGEX);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    return null;
   }
 }

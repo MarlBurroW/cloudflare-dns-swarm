@@ -5,6 +5,7 @@ import { TaskWorker } from "../workers/task.worker";
 import { TaskType, TaskStatus, DNSTask } from "../models/task.model";
 import { v4 as uuidv4 } from "uuid";
 import { LabelValidator, DNSLabel } from "../utils/validators";
+import { DockerService } from "./docker.service";
 
 interface DNSUpdateOptions {
   serviceName: string;
@@ -21,6 +22,8 @@ export class DNSService {
   private cloudflare = CloudflareService.getInstance();
   private ipService = IPService.getInstance();
   private taskWorker = TaskWorker.getInstance();
+  private docker = DockerService.getInstance();
+  private validator = new LabelValidator();
 
   private constructor() {}
 
@@ -35,37 +38,37 @@ export class DNSService {
     serviceName: string,
     labels: { [key: string]: string }
   ): Promise<void> {
-    try {
-      this.logger.debug("Handling service update", { serviceName, labels });
-      const validator = new LabelValidator();
-      const validLabels = validator.validateServiceLabels(serviceName, labels);
+    this.logger.debug("Handling service update", { serviceName, labels });
 
-      for (const label of validLabels) {
-        const dnsOptions = {
-          serviceName,
-          name: label.hostname,
-          recordType: label.type,
-          content: label.content,
-          ttl: label.ttl,
-          proxied: label.proxied,
-        };
+    // Récupérer le service complet pour avoir tous les labels
+    const service = await this.docker.getService(serviceName);
+    const serviceSpec = await service.inspect();
+    const allLabels = serviceSpec.Spec.Labels || {};
 
-        this.logger.debug("Processing DNS options", { dnsOptions });
+    // Utiliser tous les labels pour la validation
+    const dnsLabels = this.validator.validateServiceLabels(
+      serviceName,
+      allLabels
+    );
 
-        if (!dnsOptions.content) {
-          this.logger.debug("No content provided, fetching public IP");
-          dnsOptions.content = await this.ipService.getPublicIP();
-        }
-
-        await this.createOrUpdateDNSRecord(dnsOptions);
-      }
-    } catch (error) {
-      this.logger.error("Failed to handle service update", {
-        error,
+    for (const label of dnsLabels) {
+      const dnsOptions = {
         serviceName,
-        labels,
-      });
-      throw error;
+        name: label.hostname,
+        recordType: label.type,
+        content: label.content,
+        ttl: label.ttl,
+        proxied: label.proxied,
+      };
+
+      this.logger.debug("Processing DNS options", { dnsOptions });
+
+      if (!dnsOptions.content) {
+        this.logger.debug("No content provided, fetching public IP");
+        dnsOptions.content = await this.ipService.getPublicIP();
+      }
+
+      await this.createOrUpdateDNSRecord(dnsOptions);
     }
   }
 
