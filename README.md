@@ -344,6 +344,29 @@ The project maintains a high test coverage to ensure reliability. All new contri
 
 Contributions are welcome! Feel free to open an issue or pull request.
 
+## 🗺️ Roadmap
+
+### 🎯 Upcoming Features
+
+#### 🔄 Multi-Provider Support
+
+The next major version will introduce a plugin system for multiple DNS providers:
+
+- 🔌 **Plugin Architecture**
+
+  - Abstract provider interface
+  - Easy integration of new providers
+  - Hot-swappable providers
+
+- 🏢 **Planned Providers**
+  - ✅ Cloudflare (current)
+  - 🔜 AWS Route53
+  - 🔜 Google Cloud DNS
+  - 🔜 OVH DNS
+  - 🔜 Digital Ocean DNS
+
+Want to contribute to these features? Check our [Contributing](#🤝-contributing) section!
+
 ## 📄 License
 
 MIT
