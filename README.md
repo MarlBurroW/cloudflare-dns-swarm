@@ -1,4 +1,4 @@
-# 🌐 Docker/Swarm Cloudflare DNS Manager
+# 🌐 Docker/Swarm Cloudflare DNS Manager (WIP)
 
 A Node.js service that automatically manages DNS records in Cloudflare based on Docker events. It monitors both Docker containers and Swarm services for specific labels and updates corresponding DNS records.
 
